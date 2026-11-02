@@ -1,9 +1,11 @@
+'use strict'
+
 /**
  * Module dependencies.
  */
 
 var express = require('../../');
-var path = require('path');
+var path = require('node:path');
 
 var app = module.exports = express();
 
@@ -33,7 +35,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // ex: res.render('users.html').
 app.set('view engine', 'html');
 
-// Dummy users
+// Placeholder users
 var users = [
   { name: 'tobi', email: 'tobi@learnboost.com' },
   { name: 'loki', email: 'loki@learnboost.com' },

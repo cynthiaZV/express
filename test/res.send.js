@@ -1,10 +1,13 @@
+'use strict'
 
-var assert = require('assert')
-var Buffer = require('safe-buffer').Buffer
+var assert = require('node:assert')
+const { Buffer } = require('node:buffer');
 var express = require('..');
-var methods = require('methods');
+var methods = require('../lib/utils').methods;
 var request = require('supertest');
 var utils = require('./support/utils');
+
+var shouldSkipQuery = require('./support/utils').shouldSkipQuery
 
 describe('res', function(){
   describe('.send()', function(){
@@ -50,63 +53,18 @@ describe('res', function(){
     })
   })
 
-  describe('.send(code)', function(){
-    it('should set .statusCode', function(done){
+  describe('.send(Number)', function(){
+    it('should send as application/json', function(done){
       var app = express();
 
       app.use(function(req, res){
-        res.send(201)
-      });
-
-      request(app)
-      .get('/')
-      .expect('Created')
-      .expect(201, done);
-    })
-  })
-
-  describe('.send(code, body)', function(){
-    it('should set .statusCode and body', function(done){
-      var app = express();
-
-      app.use(function(req, res){
-        res.send(201, 'Created :)');
-      });
-
-      request(app)
-      .get('/')
-      .expect('Created :)')
-      .expect(201, done);
-    })
-  })
-
-  describe('.send(body, code)', function(){
-    it('should be supported for backwards compat', function(done){
-      var app = express();
-
-      app.use(function(req, res){
-        res.send('Bad!', 400);
-      });
-
-      request(app)
-      .get('/')
-      .expect('Bad!')
-      .expect(400, done);
-    })
-  })
-
-  describe('.send(code, number)', function(){
-    it('should send number as json', function(done){
-      var app = express();
-
-      app.use(function(req, res){
-        res.send(200, 0.123);
+        res.send(1000);
       });
 
       request(app)
       .get('/')
       .expect('Content-Type', 'application/json; charset=utf-8')
-      .expect(200, '0.123', done);
+      .expect(200, '1000', done)
     })
   })
 
@@ -164,6 +122,32 @@ describe('res', function(){
       .expect(200, 'hey', done);
     })
 
+    it('should preserve existing parameters when adding charset', function(done){
+      var app = express();
+
+      app.use(function(req, res){
+        res.set('Content-Type', 'text/plain; foo=bar').send('hey');
+      });
+
+      request(app)
+      .get('/')
+      .expect('Content-Type', 'text/plain; foo=bar; charset=utf-8')
+      .expect(200, 'hey', done);
+    })
+
+    it('should not throw on a Content-Type that fails to parse', function(done){
+      var app = express();
+
+      app.use(function(req, res){
+        res.set('Content-Type', 'text/plain; foo').send('hey');
+      });
+
+      request(app)
+      .get('/')
+      .expect('Content-Type', 'text/plain; charset=utf-8')
+      .expect(200, 'hey', done);
+    })
+
     it('should keep charset in Content-Type for Buffers', function(done){
       var app = express();
 
@@ -187,11 +171,11 @@ describe('res', function(){
       });
 
       request(app)
-      .get('/')
-      .expect(200)
-      .expect('Content-Type', 'application/octet-stream')
-      .expect(shouldHaveBody(Buffer.from('hello')))
-      .end(done)
+        .get('/')
+        .expect(200)
+        .expect('Content-Type', 'application/octet-stream')
+        .expect(utils.shouldHaveBody(Buffer.from('hello')))
+        .end(done)
     })
 
     it('should set ETag', function (done) {
@@ -218,6 +202,19 @@ describe('res', function(){
       .get('/')
       .expect('Content-Type', 'text/plain; charset=utf-8')
       .expect(200, 'hey', done);
+    })
+
+    it('should accept Uint8Array', function(done){
+      var app = express();
+      app.use(function(req, res){
+        const encodedHey = new TextEncoder().encode("hey");
+        res.set("Content-Type", "text/plain").send(encodedHey);
+      })
+
+      request(app)
+        .get("/")
+        .expect("Content-Type", "text/plain; charset=utf-8")
+        .expect(200, "hey", done);
     })
 
     it('should not override ETag', function (done) {
@@ -258,10 +255,10 @@ describe('res', function(){
       });
 
       request(app)
-      .head('/')
-      .expect(200)
-      .expect(shouldNotHaveBody())
-      .end(done)
+        .head('/')
+        .expect(200)
+        .expect(utils.shouldNotHaveBody())
+        .end(done)
     })
   })
 
@@ -279,6 +276,22 @@ describe('res', function(){
       .expect(utils.shouldNotHaveHeader('Content-Length'))
       .expect(utils.shouldNotHaveHeader('Transfer-Encoding'))
       .expect(204, '', done);
+    })
+  })
+
+  describe('when .statusCode is 205', function () {
+    it('should strip Transfer-Encoding field and body, set Content-Length', function (done) {
+      var app = express()
+
+      app.use(function (req, res) {
+        res.status(205).set('Transfer-Encoding', 'chunked').send('foo')
+      })
+
+      request(app)
+        .get('/')
+        .expect(utils.shouldNotHaveHeader('Transfer-Encoding'))
+        .expect('Content-Length', '0')
+        .expect(205, '', done)
     })
   })
 
@@ -392,6 +405,9 @@ describe('res', function(){
         if (method === 'connect') return;
 
         it('should send ETag in response to ' + method.toUpperCase() + ' request', function (done) {
+          if (method === 'query' && shouldSkipQuery(process.versions.node)) {
+            this.skip()
+          }
           var app = express();
 
           app[method]('/', function (req, res) {
@@ -441,7 +457,7 @@ describe('res', function(){
 
         app.use(function (req, res) {
           res.set('etag', '"asdf"');
-          res.send(200);
+          res.send('hello!');
         });
 
         app.enable('etag');
@@ -492,7 +508,7 @@ describe('res', function(){
 
         app.use(function (req, res) {
           res.set('etag', '"asdf"');
-          res.send(200);
+          res.send('hello!');
         });
 
         request(app)
@@ -544,7 +560,7 @@ describe('res', function(){
           var chunk = !Buffer.isBuffer(body)
             ? Buffer.from(body, encoding)
             : body;
-          chunk.toString().should.equal('hello, world!');
+          assert.strictEqual(chunk.toString(), 'hello, world!')
           return '"custom"';
         });
 
@@ -576,20 +592,44 @@ describe('res', function(){
       })
     })
   })
+
+  describe('when Transfer-Encoding header is present', function(){
+    var transferEncodings = [
+      'chunked',
+      'compress',
+      'deflate',
+      'gzip'
+    ];
+
+    transferEncodings.forEach(function(encoding){
+      it('should not add Content-Length header if Transfer-Encoding header is equal to ' + encoding, function(done){
+        var app = express();
+
+        app.use(function(_, res){
+          res.status(200).set('Transfer-Encoding', encoding).send('');
+        });
+
+        request(app)
+          .get('/')
+          .expect(utils.shouldNotHaveHeader('Content-Length'))
+          .expect(utils.shouldHaveHeader('Transfer-Encoding'))
+          .expect(200, '', done);
+      })
+    });
+
+    it('should still generate an ETag', function(done){
+      var app = express();
+
+      app.use(function(_, res){
+        res.set('Transfer-Encoding', 'chunked').send('hello');
+      });
+
+      request(app)
+        .get('/')
+        .expect(utils.shouldNotHaveHeader('Content-Length'))
+        .expect(utils.shouldHaveHeader('Transfer-Encoding'))
+        .expect('ETag', 'W/"5-qvTGHdzF6KLavt4PO0gs2a6pQ00"')
+        .expect(200, 'hello', done);
+    })
+  })
 })
-
-function shouldHaveBody (buf) {
-  return function (res) {
-    var body = !Buffer.isBuffer(res.body)
-      ? Buffer.from(res.text)
-      : res.body
-    assert.ok(body, 'response has body')
-    assert.strictEqual(body.toString('hex'), buf.toString('hex'))
-  }
-}
-
-function shouldNotHaveBody () {
-  return function (res) {
-    assert.ok(res.text === '' || res.text === undefined)
-  }
-}

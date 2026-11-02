@@ -1,7 +1,9 @@
+'use strict'
 
-var assert = require('assert')
+var assert = require('node:assert')
+var ejs = require('ejs');
 var express = require('..');
-var path = require('path')
+var path = require('node:path')
 var tmpl = require('./support/tmpl');
 
 describe('app', function(){
@@ -13,7 +15,7 @@ describe('app', function(){
 
       app.render(path.join(__dirname, 'fixtures', 'user.tmpl'), function (err, str) {
         if (err) return done(err);
-        str.should.equal('<p>tobi</p>');
+        assert.strictEqual(str, '<p>tobi</p>')
         done();
       })
     })
@@ -26,9 +28,34 @@ describe('app', function(){
 
       app.render(path.join(__dirname, 'fixtures', 'user'), function (err, str) {
         if (err) return done(err);
-        str.should.equal('<p>tobi</p>');
+        assert.strictEqual(str, '<p>tobi</p>')
         done();
       })
+    })
+
+    it('should throw without a view engine or file extension', function(){
+      var app = express();
+
+      assert.throws(function () {
+        app.render('user', function () {
+          assert.fail('render callback should not be called');
+        });
+      }, /No default engine was specified and no extension was provided\./);
+    })
+
+    it('should throw when the view engine module does not exist', function(){
+      var app = express();
+
+      app.set('view engine', 'express-test-missing-engine');
+
+      assert.throws(function () {
+        app.render('user', function () {
+          assert.fail('render callback should not be called');
+        });
+      }, {
+        code: 'MODULE_NOT_FOUND',
+        message: /^Cannot find module 'express-test-missing-engine'(?:\n|$)/
+      });
     })
 
     it('should expose app.locals', function(done){
@@ -39,7 +66,7 @@ describe('app', function(){
 
       app.render('user.tmpl', function (err, str) {
         if (err) return done(err);
-        str.should.equal('<p>tobi</p>');
+        assert.strictEqual(str, '<p>tobi</p>')
         done();
       })
     })
@@ -52,7 +79,7 @@ describe('app', function(){
 
       app.render('blog/post', function (err, str) {
         if (err) return done(err);
-        str.should.equal('<h1>blog post</h1>');
+        assert.strictEqual(str, '<h1>blog post</h1>')
         done();
       })
     })
@@ -72,8 +99,8 @@ describe('app', function(){
       app.set('view', View);
 
       app.render('something', function(err, str){
-        err.should.be.ok()
-        err.message.should.equal('err!');
+        assert.ok(err)
+        assert.strictEqual(err.message, 'err!')
         done();
       })
     })
@@ -103,6 +130,21 @@ describe('app', function(){
           done()
         })
       })
+
+      it('should pass a sync engine throw to the callback on first render', function(done){
+        var app = express();
+        var error = new Error('render failed');
+
+        app.engine('tmpl', function () {
+          throw error;
+        });
+        app.set('views', path.join(__dirname, 'fixtures'))
+
+        app.render('user.tmpl', function (err) {
+          assert.strictEqual(err, error)
+          done();
+        })
+      })
     })
 
     describe('when an extension is given', function(){
@@ -113,7 +155,7 @@ describe('app', function(){
 
         app.render('email.tmpl', function (err, str) {
           if (err) return done(err);
-          str.should.equal('<p>This is an email</p>');
+          assert.strictEqual(str, '<p>This is an email</p>')
           done();
         })
       })
@@ -128,7 +170,7 @@ describe('app', function(){
 
         app.render('email', function(err, str){
           if (err) return done(err);
-          str.should.equal('<p>This is an email</p>');
+          assert.strictEqual(str, '<p>This is an email</p>')
           done();
         })
       })
@@ -143,7 +185,7 @@ describe('app', function(){
 
         app.render('user.tmpl', function (err, str) {
           if (err) return done(err);
-          str.should.equal('<p>tobi</p>');
+          assert.strictEqual(str, '<p>tobi</p>')
           done();
         })
       })
@@ -161,7 +203,7 @@ describe('app', function(){
 
           app.render('user.tmpl', function (err, str) {
             if (err) return done(err);
-            str.should.equal('<span>tobi</span>');
+            assert.strictEqual(str, '<span>tobi</span>')
             done();
           })
         })
@@ -178,7 +220,37 @@ describe('app', function(){
 
           app.render('name.tmpl', function (err, str) {
             if (err) return done(err);
-            str.should.equal('<p>tobi</p>');
+            assert.strictEqual(str, '<p>tobi</p>')
+            done();
+          })
+        })
+
+        it('should continue past an empty-string root', function(done){
+          var app = createApp();
+
+          app.set('views', ['', path.join(__dirname, 'fixtures')]);
+          app.locals.user = { name: 'tobi' };
+
+          app.render('user.tmpl', function (err, str) {
+            if (err) return done(err);
+            assert.strictEqual(str, '<p>tobi</p>')
+            done();
+          })
+        })
+
+        it('should continue looking up after an ENOTDIR stat error', function(done){
+          var app = createApp();
+          var views = [
+            path.join(__dirname, 'fixtures', 'user.tmpl'),
+            path.join(__dirname, 'fixtures')
+          ];
+
+          app.set('views', views);
+          app.locals.user = { name: 'tobi' };
+
+          app.render('user.tmpl', function (err, str) {
+            if (err) return done(err);
+            assert.strictEqual(str, '<p>tobi</p>')
             done();
           })
         })
@@ -219,13 +291,130 @@ describe('app', function(){
 
         app.render('something', function(err, str){
           if (err) return done(err);
-          str.should.equal('abstract engine');
+          assert.strictEqual(str, 'abstract engine')
+          done();
+        })
+      })
+
+      it('should error when a custom view leaves path unset', function(done){
+        var app = express();
+
+        function View(name, options){
+          this.name = name;
+          this.root = options.root;
+        }
+
+        View.prototype.render = function(){
+          throw new Error('render should not be called');
+        };
+
+        app.set('view', View);
+
+        app.render('something', function(err){
+          assert.ok(err)
+          assert.match(err.message, /^Failed to lookup view "something"/)
+          done();
+        })
+      })
+
+      it('should honor a View subclass that clears path to deny a view', function(done){
+        var app = express();
+        var BaseView = app.get('view');
+
+        app.engine('tmpl', function (file, options, fn) {
+          fn(null, 'served');
+        });
+        app.set('views', path.join(__dirname, 'fixtures'))
+
+        function DenyView(name, options){
+          BaseView.call(this, name, options);
+          this.path = null;
+        }
+
+        DenyView.prototype = Object.create(BaseView.prototype);
+        DenyView.prototype.constructor = DenyView;
+
+        app.set('view', DenyView);
+
+        app.render('user.tmpl', function (err){
+          assert.ok(err, 'denied view must not be served')
+          assert.match(err.message, /^Failed to lookup view "user\.tmpl"/)
           done();
         })
       })
     })
 
+    describe('engine caching', function(){
+      it('should cache an automatically loaded engine', function(done){
+        var app = express();
+
+        app.disable('view cache');
+        app.set('views', path.join(__dirname, 'fixtures'))
+        app.locals.user = { name: 'tobi' };
+
+        assert.strictEqual(app.engines['.ejs'], undefined)
+
+        app.render('user.ejs', function (err, str) {
+          if (err) return done(err);
+          assert.strictEqual(str, '<p>tobi</p>')
+          assert.strictEqual(app.engines['.ejs'], ejs.__express)
+          done();
+        })
+      })
+
+      it('should use a replacement engine on subsequent renders', function(done){
+        var app = express();
+        var calls = 0;
+
+        // Construct a new View on each render so its cached engine is exercised.
+        app.disable('view cache');
+        app.set('views', path.join(__dirname, 'fixtures'))
+        app.locals.user = { name: 'tobi' };
+
+        app.render('user.ejs', function (err, str) {
+          if (err) return done(err);
+          assert.strictEqual(str, '<p>tobi</p>')
+
+          var engine = app.engines['.ejs'];
+          assert.strictEqual(engine, ejs.__express)
+
+          app.engine('ejs', function (file, options, callback) {
+            calls++;
+            engine(file, options, callback);
+          });
+          app.locals.user = { name: 'loki' };
+
+          app.render('user.ejs', function (err2, str2) {
+            if (err2) return done(err2);
+            assert.strictEqual(str2, '<p>loki</p>')
+            assert.strictEqual(calls, 1)
+            done();
+          })
+        })
+      })
+    })
+
     describe('caching', function(){
+      it('should not cache views whose lookup failed', function(done){
+        var app = createApp();
+
+        app.enable('view cache');
+        app.set('views', path.join(__dirname, 'fixtures', 'local_layout'))
+
+        app.render('email.tmpl', function (err) {
+          assert.ok(err)
+          assert.match(err.message, /^Failed to lookup view "email\.tmpl"/)
+
+          app.set('views', path.join(__dirname, 'fixtures'))
+
+          app.render('email.tmpl', function (err2, str) {
+            if (err2) return done(err2);
+            assert.strictEqual(str, '<p>This is an email</p>')
+            done();
+          })
+        })
+      })
+
       it('should always lookup view without cache', function(done){
         var app = express();
         var count = 0;
@@ -245,12 +434,12 @@ describe('app', function(){
 
         app.render('something', function(err, str){
           if (err) return done(err);
-          count.should.equal(1);
-          str.should.equal('abstract engine');
+          assert.strictEqual(count, 1)
+          assert.strictEqual(str, 'abstract engine')
           app.render('something', function(err, str){
             if (err) return done(err);
-            count.should.equal(2);
-            str.should.equal('abstract engine');
+            assert.strictEqual(count, 2)
+            assert.strictEqual(str, 'abstract engine')
             done();
           })
         })
@@ -275,12 +464,12 @@ describe('app', function(){
 
         app.render('something', function(err, str){
           if (err) return done(err);
-          count.should.equal(1);
-          str.should.equal('abstract engine');
+          assert.strictEqual(count, 1)
+          assert.strictEqual(str, 'abstract engine')
           app.render('something', function(err, str){
             if (err) return done(err);
-            count.should.equal(1);
-            str.should.equal('abstract engine');
+            assert.strictEqual(count, 1)
+            assert.strictEqual(str, 'abstract engine')
             done();
           })
         })
@@ -298,7 +487,7 @@ describe('app', function(){
 
       app.render('user.tmpl', { user: user }, function (err, str) {
         if (err) return done(err);
-        str.should.equal('<p>tobi</p>');
+        assert.strictEqual(str, '<p>tobi</p>')
         done();
       })
     })
@@ -311,7 +500,7 @@ describe('app', function(){
 
       app.render('user.tmpl', {}, function (err, str) {
         if (err) return done(err);
-        str.should.equal('<p>tobi</p>');
+        assert.strictEqual(str, '<p>tobi</p>')
         done();
       })
     })
@@ -325,8 +514,26 @@ describe('app', function(){
 
       app.render('user.tmpl', { user: jane }, function (err, str) {
         if (err) return done(err);
-        str.should.equal('<p>jane</p>');
+        assert.strictEqual(str, '<p>jane</p>')
         done();
+      })
+    })
+
+    it('should accept null or undefined options', function (done) {
+      var app = createApp()
+
+      app.set('views', path.join(__dirname, 'fixtures'))
+      app.locals.user = { name: 'tobi' }
+
+      app.render('user.tmpl', null, function (err, str) {
+        if (err) return done(err);
+        assert.strictEqual(str, '<p>tobi</p>')
+
+        app.render('user.tmpl', undefined, function (err2, str2) {
+          if (err2) return done(err2);
+          assert.strictEqual(str2, '<p>tobi</p>')
+          done()
+        })
       })
     })
 
@@ -350,12 +557,12 @@ describe('app', function(){
 
         app.render('something', {cache: true}, function(err, str){
           if (err) return done(err);
-          count.should.equal(1);
-          str.should.equal('abstract engine');
+          assert.strictEqual(count, 1)
+          assert.strictEqual(str, 'abstract engine')
           app.render('something', {cache: true}, function(err, str){
             if (err) return done(err);
-            count.should.equal(1);
-            str.should.equal('abstract engine');
+            assert.strictEqual(count, 1)
+            assert.strictEqual(str, 'abstract engine')
             done();
           })
         })

@@ -1,29 +1,49 @@
+'use strict'
 
-var assert = require('assert');
-var Buffer = require('safe-buffer').Buffer
+var assert = require('node:assert');
+const { Buffer } = require('node:buffer');
 var utils = require('../lib/utils');
 
 describe('utils.etag(body, encoding)', function(){
   it('should support strings', function(){
-    utils.etag('express!')
-    .should.eql('"8-O2uVAFaQ1rZvlKLT14RnuvjPIdg"')
+    assert.strictEqual(utils.etag('express!'),
+      '"8-O2uVAFaQ1rZvlKLT14RnuvjPIdg"')
   })
 
   it('should support utf8 strings', function(){
-    utils.etag('express❤', 'utf8')
-    .should.eql('"a-JBiXf7GyzxwcrxY4hVXUwa7tmks"')
+    assert.strictEqual(utils.etag('express❤', 'utf8'),
+      '"a-JBiXf7GyzxwcrxY4hVXUwa7tmks"')
   })
 
   it('should support buffer', function(){
-    utils.etag(Buffer.from('express!'))
-    .should.eql('"8-O2uVAFaQ1rZvlKLT14RnuvjPIdg"')
+    assert.strictEqual(utils.etag(Buffer.from('express!')),
+      '"8-O2uVAFaQ1rZvlKLT14RnuvjPIdg"')
   })
 
   it('should support empty string', function(){
-    utils.etag('')
-    .should.eql('"0-2jmj7l5rSw0yVb/vlWAYkK/YBwk"')
+    assert.strictEqual(utils.etag(''),
+      '"0-2jmj7l5rSw0yVb/vlWAYkK/YBwk"')
   })
 })
+
+describe('utils.normalizeType acceptParams method', () => {
+  it('should handle a type with a malformed parameter and break the loop in acceptParams', () => {
+    const result = utils.normalizeType('text/plain;invalid');
+    assert.deepEqual(result,{
+      value: 'text/plain',
+      quality: 1,
+      params: {} // No parameters are added since "invalid" has no "="
+    });
+  });
+
+  it('should default to application/octet-stream when mime lookup fails', () => {
+    const result = utils.normalizeType('unknown-extension-xyz');
+    assert.deepEqual(result, {
+      value: 'application/octet-stream',
+      params: {}
+    });
+  });
+});
 
 describe('utils.setCharset(type, charset)', function () {
   it('should do anything without type', function () {
@@ -49,47 +69,47 @@ describe('utils.setCharset(type, charset)', function () {
 
 describe('utils.wetag(body, encoding)', function(){
   it('should support strings', function(){
-    utils.wetag('express!')
-    .should.eql('W/"8-O2uVAFaQ1rZvlKLT14RnuvjPIdg"')
+    assert.strictEqual(utils.wetag('express!'),
+      'W/"8-O2uVAFaQ1rZvlKLT14RnuvjPIdg"')
   })
 
   it('should support utf8 strings', function(){
-    utils.wetag('express❤', 'utf8')
-    .should.eql('W/"a-JBiXf7GyzxwcrxY4hVXUwa7tmks"')
+    assert.strictEqual(utils.wetag('express❤', 'utf8'),
+      'W/"a-JBiXf7GyzxwcrxY4hVXUwa7tmks"')
   })
 
   it('should support buffer', function(){
-    utils.wetag(Buffer.from('express!'))
-    .should.eql('W/"8-O2uVAFaQ1rZvlKLT14RnuvjPIdg"')
+    assert.strictEqual(utils.wetag(Buffer.from('express!')),
+      'W/"8-O2uVAFaQ1rZvlKLT14RnuvjPIdg"')
   })
 
   it('should support empty string', function(){
-    utils.wetag('')
-    .should.eql('W/"0-2jmj7l5rSw0yVb/vlWAYkK/YBwk"')
+    assert.strictEqual(utils.wetag(''),
+      'W/"0-2jmj7l5rSw0yVb/vlWAYkK/YBwk"')
   })
 })
 
-describe('utils.isAbsolute()', function(){
-  it('should support windows', function(){
-    assert(utils.isAbsolute('c:\\'));
-    assert(utils.isAbsolute('c:/'));
-    assert(!utils.isAbsolute(':\\'));
-  })
+describe('utils.compileETag()', function () {
+  it('should return generateETag for true', function () {
+    const fn = utils.compileETag(true);
+    assert.strictEqual(fn('express!'), utils.wetag('express!'));
+  });
 
-  it('should support windows unc', function(){
-    assert(utils.isAbsolute('\\\\foo\\bar'))
-  })
+  it('should return undefined for false', function () {
+    assert.strictEqual(utils.compileETag(false), undefined);
+  });
 
-  it('should support unices', function(){
-    assert(utils.isAbsolute('/foo/bar'));
-    assert(!utils.isAbsolute('foo/bar'));
-  })
-})
+  it('should return generateETag for string values "strong" and "weak"', function () {
+    assert.strictEqual(utils.compileETag('strong')("express"), utils.etag("express"));
+    assert.strictEqual(utils.compileETag('weak')("express"), utils.wetag("express"));
+  });
 
-describe('utils.flatten(arr)', function(){
-  it('should flatten an array', function(){
-    var arr = ['one', ['two', ['three', 'four'], 'five']];
-    utils.flatten(arr)
-      .should.eql(['one', 'two', 'three', 'four', 'five']);
-  })
-})
+  it('should throw for unknown string values', function () {
+    assert.throws(() => utils.compileETag('foo'), TypeError);
+  });
+
+  it('should throw for unsupported types like arrays and objects', function () {
+    assert.throws(() => utils.compileETag([]), TypeError);
+    assert.throws(() => utils.compileETag({}), TypeError);
+  });
+});

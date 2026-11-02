@@ -1,5 +1,5 @@
+'use strict'
 
-var assert = require('assert')
 var express = require('..');
 var request = require('supertest');
 var utils = require('./support/utils');
@@ -61,21 +61,6 @@ describe('res', function(){
     })
   })
 
-  describe('.redirect(url, status)', function(){
-    it('should set the response status', function(done){
-      var app = express();
-
-      app.use(function(req, res){
-        res.redirect('http://google.com', 303);
-      });
-
-      request(app)
-      .get('/')
-      .expect('Location', 'http://google.com')
-      .expect(303, done)
-    })
-  })
-
   describe('when the request method is HEAD', function(){
     it('should ignore the body', function(done){
       var app = express();
@@ -85,11 +70,11 @@ describe('res', function(){
       });
 
       request(app)
-      .head('/')
-      .expect(302)
-      .expect('Location', 'http://google.com')
-      .expect(shouldNotHaveBody())
-      .end(done)
+        .head('/')
+        .expect(302)
+        .expect('Location', 'http://google.com')
+        .expect(utils.shouldNotHaveBody())
+        .end(done)
     })
   })
 
@@ -106,7 +91,7 @@ describe('res', function(){
       .set('Accept', 'text/html')
       .expect('Content-Type', /html/)
       .expect('Location', 'http://google.com')
-      .expect(302, '<p>Found. Redirecting to <a href="http://google.com">http://google.com</a></p>', done)
+      .expect(302, '<!DOCTYPE html><head><title>Found</title></head><body><p>Found. Redirecting to http://google.com</p></body>', done)
     })
 
     it('should escape the url', function(done){
@@ -122,8 +107,26 @@ describe('res', function(){
       .set('Accept', 'text/html')
       .expect('Content-Type', /html/)
       .expect('Location', '%3Cla\'me%3E')
-      .expect(302, '<p>Found. Redirecting to <a href="%3Cla&#39;me%3E">%3Cla&#39;me%3E</a></p>', done)
+      .expect(302, '<!DOCTYPE html><head><title>Found</title></head><body><p>Found. Redirecting to %3Cla&#39;me%3E</p></body>', done)
     })
+
+    it('should not render evil javascript links in anchor href (prevent XSS)', function(done){
+      var app = express();
+      var xss = 'javascript:eval(document.body.innerHTML=`<p>XSS</p>`);';
+      var encodedXss = 'javascript:eval(document.body.innerHTML=%60%3Cp%3EXSS%3C/p%3E%60);';
+
+      app.use(function(req, res){
+        res.redirect(xss);
+      });
+
+      request(app)
+      .get('/')
+      .set('Host', 'http://example.com')
+      .set('Accept', 'text/html')
+      .expect('Content-Type', /html/)
+      .expect('Location', encodedXss)
+      .expect(302, '<!DOCTYPE html><head><title>Found</title></head><body><p>Found. Redirecting to ' + encodedXss +'</p></body>', done);
+    });
 
     it('should include the redirect type', function(done){
       var app = express();
@@ -137,7 +140,7 @@ describe('res', function(){
       .set('Accept', 'text/html')
       .expect('Content-Type', /html/)
       .expect('Location', 'http://google.com')
-      .expect(301, '<p>Moved Permanently. Redirecting to <a href="http://google.com">http://google.com</a></p>', done);
+      .expect(301, '<!DOCTYPE html><head><title>Moved Permanently</title></head><body><p>Moved Permanently. Redirecting to http://google.com</p></body>', done);
     })
   })
 
@@ -198,20 +201,14 @@ describe('res', function(){
       });
 
       request(app)
-      .get('/')
-      .set('Accept', 'application/octet-stream')
-      .expect(302)
-      .expect('location', 'http://google.com')
-      .expect('content-length', '0')
-      .expect(utils.shouldNotHaveHeader('Content-Type'))
-      .expect(shouldNotHaveBody())
-      .end(done)
+        .get('/')
+        .set('Accept', 'application/octet-stream')
+        .expect(302)
+        .expect('location', 'http://google.com')
+        .expect('content-length', '0')
+        .expect(utils.shouldNotHaveHeader('Content-Type'))
+        .expect(utils.shouldNotHaveBody())
+        .end(done)
     })
   })
 })
-
-function shouldNotHaveBody () {
-  return function (res) {
-    assert.ok(res.text === '' || res.text === undefined)
-  }
-}

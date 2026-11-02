@@ -1,3 +1,4 @@
+'use strict'
 
 var express = require('../')
   , request = require('supertest');
@@ -38,7 +39,7 @@ describe('req', function(){
         app.enable('trust proxy');
 
         app.use(function(req, res){
-          req.connection.encrypted = true;
+          req.socket.encrypted = true;
           res.end(req.protocol);
         });
 
